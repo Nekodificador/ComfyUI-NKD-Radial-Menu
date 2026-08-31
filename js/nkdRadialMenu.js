@@ -158,6 +158,25 @@ function closeRadial() {
   if (overlay) { overlay.style.display = "none"; overlay.innerHTML = "" }
 }
 
+// ─── Config modal (stub — full port from standalone pending) ────────────────
+
+function openConfigModal() {
+  // TODO: port settings modal from standalone (radial preview, drag & drop,
+  // icon picker, category editor). For now: open a simple JSON editor.
+  cats = loadConfig()
+  const json = JSON.stringify(cats, null, 2)
+  const input = prompt("Edit radial menu categories (JSON):", json)
+  if (input) {
+    try {
+      const parsed = JSON.parse(input)
+      if (Array.isArray(parsed)) {
+        cats = parsed
+        app.ui?.settings?.setSettingValue(SETTING_PREFIX + "Categories", JSON.stringify(cats))
+      }
+    } catch (e) { alert("Invalid JSON: " + e.message) }
+  }
+}
+
 // ─── Extension ──────────────────────────────────────────────────────────────
 
 app.registerExtension({
@@ -191,6 +210,27 @@ app.registerExtension({
       name: "Radial Menu Categories",
       type: "hidden",
       defaultValue: JSON.stringify(DEFAULT_CATS),
+    })
+
+    // Settings row with button to open config modal (à la rgthree)
+    app.ui?.settings?.addSetting({
+      id: SETTING_PREFIX + "Config",
+      defaultValue: null,
+      name: "NKD Radial Menu settings",
+      type: () => {
+        const tr = document.createElement("tr")
+        const tdLabel = document.createElement("td")
+        tdLabel.innerHTML = "<div>NKD Radial Menu — configure categories</div>"
+        const tdBtn = document.createElement("td")
+        const btn = document.createElement("button")
+        btn.textContent = "Configure Radial Menu"
+        btn.style.cssText = "padding:4px 12px;border-radius:6px;background:#7F77DD;color:#fff;border:none;cursor:pointer;"
+        btn.addEventListener("click", () => openConfigModal())
+        tdBtn.appendChild(btn)
+        tr.appendChild(tdLabel)
+        tr.appendChild(tdBtn)
+        return tr
+      },
     })
 
     window.addEventListener("keydown", (e) => {
