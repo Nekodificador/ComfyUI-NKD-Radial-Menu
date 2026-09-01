@@ -101,7 +101,7 @@ function addNodeAt(nodeType, canvasX, canvasY) {
   if (!nodeType) return null
   const node = LiteGraph.createNode(nodeType)
   if (!node) {
-    console.warn(`[NKD Radial] Unknown node type: ${nodeType}`)
+    app.ui?.dialog?.show?.(`Node "${nodeType}" is not installed.`) || alert(`Node "${nodeType}" is not installed.`)
     return null
   }
   const graph = app.canvas?.graph || app.graph
