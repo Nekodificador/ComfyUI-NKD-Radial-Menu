@@ -1570,11 +1570,14 @@ app.registerExtension({
         closeRadial()
         return
       }
-      if (e.key !== "Alt" || e.repeat || !_ptrDown || _ptrClaimed || menuOpen) return
-      if (nodeUnderCursor() || linkUnderCursor()) return
+      if (e.key !== "Alt" || e.repeat || !_ptrDown || menuOpen) return
       const gc = app.canvas
+      // Dragging a link from a socket is the one claimed press that may open
+      // the menu (the new node gets auto-connected).
+      const connecting = readConnecting(gc)
+      if (!connecting && (_ptrClaimed || nodeUnderCursor() || linkUnderCursor())) return
       if (gc) {
-        _pendingConnect = readConnecting(gc)
+        _pendingConnect = connecting
         gc.dragging_canvas = false
       }
       openRadial(_lastMX, _lastMY)
