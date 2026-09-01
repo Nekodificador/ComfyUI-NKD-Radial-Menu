@@ -10,7 +10,9 @@ https://github.com/user-attachments/assets/19ea8fed-8255-4100-b075-65afda3a2ddc
 
 If you're already dragging an output and press Alt, the menu opens with the link still attached. Pick a node from the menu and it gets created and auto-connected to that output.
 
-And don't worry about duplicating nodes. Alt+Click on a node does nothing, so it stays out of the way of other shortcuts.
+It stays out of the way of ComfyUI's own Alt shortcuts. Alt+Click on a node, on a link (to add a reroute) or while dragging a reroute does what it always did; the menu only opens on empty canvas.
+
+If you pick a node that isn't installed (say, from a configuration a friend shared), a toast tells you which node is missing so you can look it up in the Manager.
 
 ## Install
 
@@ -39,9 +41,18 @@ Open **Settings** in ComfyUI. You'll find two entries under NKD Radial Menu:
 
 - Add, remove and reorder categories (up to 8)
 - Drag categories on the radial preview to rearrange them
-- Add nodes to each category with fuzzy search (searches by display name, the same names you see in ComfyUI's native search)
+- Add nodes to each category by searching their display name (the same names you see in ComfyUI's native search)
+- Place each node on any of the 8 wheel slots by clicking the slot you want
+- Keep more than 8 nodes per category: the extra ones go to an auxiliary list, and you can swap any of them into the wheel later
+- Give a node a short label (up to 5 characters) for the wheel. Without one, the wheel shows the node's display name split over two lines
 - Pick icons for categories and individual nodes
 - Export and import the full configuration as JSON
+
+Deleting a category or a node asks for confirmation first.
+
+### Adding nodes from the canvas
+
+Right-click any node and choose **Add to Radial Menu**, then the category. Handy when you're already using a node and want it one gesture away next time.
 
 ## Default categories
 
@@ -109,7 +120,7 @@ If your ComfyUI installation is not at the default relative path, set `NKD_RADIA
 | `remove_value` | Remove a node from a category |
 | `swap_categories` | Swap two categories by index |
 
-Values are ComfyUI node type IDs (e.g. `KSampler`, `CLIPTextEncode`, `CheckpointLoaderSimple`). Icons are Lucide icon names from [lucide.dev/icons](https://lucide.dev/icons).
+Values are ComfyUI node type IDs (e.g. `KSampler`, `CLIPTextEncode`, `CheckpointLoaderSimple`), either as a plain string or as an object with optional `icon`, `slot` (0 to 7, position on the wheel) and `short` (label of up to 5 characters). Icons are Lucide icon names from [lucide.dev/icons](https://lucide.dev/icons).
 
 ## License
 
