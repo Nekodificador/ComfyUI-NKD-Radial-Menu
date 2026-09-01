@@ -1,8 +1,11 @@
+
+
+
 # 😺 NKD Radial Menu
 
 A radial marking menu for ComfyUI. Hold Alt+Click on the canvas, drag to a category, drill into it, release on the node you want. It appears where your cursor is and places the node right there.
 
-https://github.com/user-attachments/assets/19ea8fed-8255-4100-b075-65afda3a2ddc
+https://github.com/user-attachments/assets/63f76cfc-a006-4b82-8b49-693a1fe2ef6c
 
 ## How it works
 
@@ -31,7 +34,8 @@ git clone https://github.com/Nekodificador/NKD-Radial-Menu.git
 
 ## Configuration
 
-<img width="709" height="504" alt="image" src="https://github.com/user-attachments/assets/15ea6fa8-8fb8-4071-92ea-de4a5032f809" />
+<img width="694" height="921" alt="image" src="https://github.com/user-attachments/assets/d76b16cd-d3bc-4baa-aed0-8ef950fc5c7c" />
+
 
 Open **Settings** in ComfyUI. You'll find two entries under NKD Radial Menu:
 
