@@ -297,7 +297,9 @@ function injectModalCSS() {
 .nkd-val-aux { display:flex; flex-direction:column; gap:2px; }
 .nkd-val-aux-head { font-size:11px; color:#666; text-transform:uppercase; letter-spacing:0.5px;
   padding:4px 0 2px; border-top:1px solid #333; margin-top:4px; }
-.nkd-val-aux-item { display:flex; align-items:center; gap:6px; }
+.nkd-val-aux-item { display:flex; align-items:center; gap:6px; cursor:pointer; border-radius:4px; padding:2px 4px; }
+.nkd-val-aux-item:hover { background:rgba(255,255,255,0.05); }
+.nkd-val-aux-item.active { background:rgba(255,255,255,0.1); }
 .nkd-val-aux-item span { flex:1; font-size:12px; color:#999; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .nkd-val-aux-item .nkd-val-btn { background:none; border:none; color:#666; cursor:pointer; font-size:14px; padding:2px 4px; }
 .nkd-val-aux-item .nkd-val-btn:hover { color:#ccc; }
@@ -1006,8 +1008,9 @@ function renderCatEdit() {
   html += `</div>`
 
   // Selected value editor
-  if (valEditIdx >= 0 && valEditIdx < wheelCount) {
+  if (valEditIdx >= 0 && valEditIdx < c.values.length) {
     const sv = c.values[valEditIdx]
+    const isWheel = valEditIdx < wheelCount
     const svIcon = sv.icon ? iconSvg(sv.icon, 12) : `<span style="font-size:9px;color:#666">&bull;</span>`
     html += `<div class="nkd-val-edit">`
       + `<div class="nkd-val-icon-picker" data-vi="${valEditIdx}">`
@@ -1018,7 +1021,7 @@ function renderCatEdit() {
       + `<div class="nkd-autocomplete" id="nkdValAc"></div>`
       + `<div class="nkd-field" style="flex:0 0 70px"><label>Label</label><input type="text" id="nkdValShort" value="${esc(sv.short||"")}" maxlength="5" placeholder="${esc((getNodeTitle(sv.label)||"").slice(0,5))}" style="width:100%"></div>`
       + `<button class="nkd-val-btn" id="nkdValDel" title="Remove">&times;</button>`
-      + `<button class="nkd-val-btn" id="nkdValDemote" title="Move to auxiliary list">&darr;</button>`
+      + (isWheel ? `<button class="nkd-val-btn" id="nkdValDemote" title="Move to auxiliary list">&darr;</button>` : ``)
       + `</div>`
   }
 
@@ -1029,7 +1032,7 @@ function renderCatEdit() {
     for (let i = 0; i < auxValues.length; i++) {
       const ai = VAL_MAX + i
       const av = auxValues[i]
-      html += `<div class="nkd-val-aux-item">`
+      html += `<div class="nkd-val-aux-item${valEditIdx === ai ? " active" : ""}" data-aux-select="${ai}">`
         + `<span title="${esc(av.label)}">${esc(getNodeTitle(av.label))}</span>`
         + `<button class="nkd-val-btn" data-aux-promote="${ai}" title="Move to wheel">&uarr;</button>`
         + `<button class="nkd-val-btn" data-aux-del="${ai}">&times;</button>`
@@ -1293,10 +1296,19 @@ function renderCatEdit() {
     })
   })
 
+  catEditEl.querySelectorAll("[data-aux-select]").forEach(row => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return
+      valEditIdx = parseInt(row.dataset.auxSelect)
+      renderCatEdit()
+    })
+  })
+
   const auxAddBtn = document.getElementById("nkdValAuxAdd")
   if (auxAddBtn) {
     auxAddBtn.addEventListener("click", () => {
       c.values.push({label:"New item", icon:""})
+      valEditIdx = c.values.length - 1
       renderCatEdit()
     })
   }
