@@ -4,3 +4,4 @@ __pycache__/
 .claude/
 CLAUDE.md
 docs/
+mcp/node_modules/

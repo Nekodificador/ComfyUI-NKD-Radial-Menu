@@ -60,6 +60,57 @@ The menu ships with 8 categories pre-configured:
 
 All of them are fully customizable.
 
+## MCP Server (configure with an AI agent)
+
+The extension includes an MCP server that lets any MCP-compatible agent (Claude Code, Claude Desktop, etc.) read and edit your radial menu configuration.
+
+### Setup
+
+```bash
+cd ComfyUI/custom_nodes/NKD-Radial-Menu/mcp
+npm install
+```
+
+Then add the server to your MCP client config:
+
+**Claude Code** (run from your project directory):
+
+```bash
+claude mcp add nkd-radial-menu -- node ComfyUI/custom_nodes/NKD-Radial-Menu/mcp/mcp_server.mjs
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "nkd-radial-menu": {
+      "command": "node",
+      "args": ["C:/path/to/ComfyUI/custom_nodes/NKD-Radial-Menu/mcp/mcp_server.mjs"]
+    }
+  }
+}
+```
+
+The server reads and writes directly in ComfyUI's settings file (`user/default/comfy.settings.json`). Changes from the MCP and changes from the ComfyUI UI end up in the same place. Reload ComfyUI after editing via the MCP to pick up the new configuration.
+
+If your ComfyUI installation is not at the default relative path, set `NKD_RADIAL_SETTINGS` to the full path of your `comfy.settings.json`.
+
+### Available tools
+
+| Tool | What it does |
+|---|---|
+| `get_config` | Read the full menu configuration |
+| `set_config` | Replace the entire configuration |
+| `add_category` | Add a new category (max 8) |
+| `update_category` | Update a category by key or index |
+| `remove_category` | Remove a category |
+| `add_value` | Add a node to a category |
+| `remove_value` | Remove a node from a category |
+| `swap_categories` | Swap two categories by index |
+
+Values are ComfyUI node type IDs (e.g. `KSampler`, `CLIPTextEncode`, `CheckpointLoaderSimple`). Icons are Lucide icon names from [lucide.dev/icons](https://lucide.dev/icons).
+
 ## License
 
 MIT
