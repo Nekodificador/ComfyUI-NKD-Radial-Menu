@@ -1533,9 +1533,8 @@ app.registerExtension({
       return hit
     }
 
-    // Path A: Alt already held → pointerdown opens menu
-    // Let LiteGraph process the event first (reroute creation, etc.),
-    // then open the menu only if nothing happened.
+    // Path A: Alt already held → pointerdown opens menu.
+    // The press is swallowed so the canvas never starts a box select.
     document.addEventListener("pointerdown", (e) => {
       _ptrDown = true
       _ptrClaimed = false
@@ -1546,16 +1545,17 @@ app.registerExtension({
       // its whole duration (drag, reroute drag), never to the menu.
       if (nodeUnderCursor() || linkUnderCursor()) { _ptrClaimed = true; return }
       if (!e.altKey) return
-      const gc = app.canvas
-      // Native reroutes live in graph.reroutes (Map), legacy ones are nodes
-      const countGraph = () => (gc?.graph?._nodes?.length || 0) + (gc?.graph?.reroutes?.size || 0)
-      const before = countGraph()
-      requestAnimationFrame(() => {
-        if (menuOpen) return
-        if (countGraph() > before) return
-        if (gc) gc.dragging_canvas = false
-        openRadial(_lastMX, _lastMY)
-      })
+      _swallowMouseDown = true
+      e.stopImmediatePropagation()
+      openRadial(e.clientX, e.clientY)
+    }, true)
+
+    // Swallow the compatibility mousedown so the canvas doesn't see it either
+    document.addEventListener("mousedown", (e) => {
+      if (_swallowMouseDown) {
+        _swallowMouseDown = false
+        e.stopImmediatePropagation()
+      }
     }, true)
 
     document.addEventListener("pointerup", () => { _ptrDown = false }, true)
