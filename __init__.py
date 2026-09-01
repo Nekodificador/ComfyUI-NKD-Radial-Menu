@@ -1,4 +1,4 @@
-"""NKD Radial Menu — Maya-style marking menu for ComfyUI (frontend-only)."""
+"""NKD Radial Menu — radial marking menu for ComfyUI (frontend-only)."""
 
 WEB_DIRECTORY = "./js"
 NODE_CLASS_MAPPINGS = {}

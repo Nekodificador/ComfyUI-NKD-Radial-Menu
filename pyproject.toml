@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-nkd-radial-menu"
+version = "1.0.0"
+description = "Radial marking menu for ComfyUI. Alt+Click to open, hold-drag-release to select and place nodes."
+license = "MIT"
+requires-python = ">=3.10"
+
+[project.urls]
+Repository = "https://github.com/Nekodificador/ComfyUI-NKD-Radial-Menu"
+
+[tool.comfy]
+PublisherId = "nekodificador"
+DisplayName = "NKD Radial Menu"
+Icon = ""
