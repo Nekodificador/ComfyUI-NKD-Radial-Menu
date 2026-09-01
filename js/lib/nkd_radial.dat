@@ -18,8 +18,10 @@
     if (!cats.length) return function () {};
 
     function valLabel(v) { return typeof v === 'string' ? v : v.label || ''; }
+    function valTitle(v) { var lbl = valLabel(v); return cfg.nodeTitle ? cfg.nodeTitle(lbl) : lbl; }
+    function valShort(v) { return (typeof v === 'object' && v.short) ? v.short : valTitle(v); }
     function valIcon(v) { return typeof v === 'object' && v.icon ? v.icon : null; }
-    function valLabels(arr) { var r = []; for (var i = 0; i < arr.length; i++) r.push(valLabel(arr[i])); return r; }
+    function valLabels(arr) { var r = []; for (var i = 0; i < arr.length; i++) r.push(valShort(arr[i])); return r; }
     function valIcons(arr) { var r = []; for (var i = 0; i < arr.length; i++) r.push(valIcon(arr[i])); return r; }
 
     var onSelect = cfg.onSelect || function () {};
@@ -152,9 +154,37 @@
         var d = Math.abs(normAngle(SLOT[order[s]], backAngle) - backAngle);
         if (d < bestD) { bestD = d; backPos = s; }
       }
-      l2SlotIdx = [];
+      var available = [];
       for (var s = 0; s < order.length; s++) {
-        if (s !== backPos) l2SlotIdx.push(order[s]);
+        if (s !== backPos) available.push(order[s]);
+      }
+      // Respect per-value slot assignments from config modal
+      var vals = cats[activeL1].values;
+      var hasSlots = vals.some(function(v) { return typeof v.slot === 'number'; });
+      if (hasSlots) {
+        var avSet = {}; for (var a = 0; a < available.length; a++) avSet[available[a]] = true;
+        l2SlotIdx = [];
+        var used = {};
+        // First pass: place values with explicit valid slot
+        for (var i = 0; i < Math.min(vals.length, available.length); i++) {
+          if (typeof vals[i].slot === 'number' && avSet[vals[i].slot] && !used[vals[i].slot]) {
+            l2SlotIdx[i] = vals[i].slot;
+            used[vals[i].slot] = true;
+          }
+        }
+        // Second pass: fill gaps with remaining available slots
+        var free = [];
+        for (var a = 0; a < available.length; a++) { if (!used[available[a]]) free.push(available[a]); }
+        var fi = 0;
+        for (var i = 0; i < Math.min(vals.length, available.length); i++) {
+          if (l2SlotIdx[i] === undefined) { l2SlotIdx[i] = free[fi++]; }
+        }
+        // Pad if fewer values than slots
+        for (var i = l2SlotIdx.length; i < available.length; i++) {
+          if (fi < free.length) l2SlotIdx[i] = free[fi++];
+        }
+      } else {
+        l2SlotIdx = available;
       }
       l2Angles = slotAngleFn(l2SlotIdx);
     }
@@ -195,7 +225,7 @@
     }
 
     // --- dynamic radius ---
-    var ABBREV = 4;
+    var ABBREV = 5;
     var l1ROut = R_OUT, l2ROut = R_OUT;
 
     function calcOuterR_donut(labels) {
@@ -344,8 +374,19 @@
           ctx.font = (hv ? '600 ' : '400 ') + fs + 'px system-ui,sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          var lbl = items[i].length > ABBREV ? items[i].slice(0, ABBREV) : items[i];
-          ctx.fillText(lbl, 0, 0);
+          var words = items[i].split(/\s+/);
+          if (words.length >= 2) {
+            var half = Math.ceil(words.length / 2);
+            var l1 = words.slice(0, half).join(' ');
+            var l2 = words.slice(half).join(' ');
+            if (l1.length > ABBREV) l1 = l1.slice(0, ABBREV) + '…';
+            if (l2.length > ABBREV) l2 = l2.slice(0, ABBREV) + '…';
+            ctx.fillText(l1, 0, -fs * 0.55);
+            ctx.fillText(l2, 0, fs * 0.55);
+          } else {
+            var lbl = items[i].length > ABBREV ? items[i].slice(0, ABBREV) + '…' : items[i];
+            ctx.fillText(lbl, 0, 0);
+          }
           ctx.restore();
         }
       }
@@ -545,7 +586,7 @@
         ctx.stroke();
         ctx.restore();
 
-        var prevText = hoverIdx >= 0 ? valLabel(vals[hoverIdx]) : cat.label;
+        var prevText = hoverIdx >= 0 ? valTitle(vals[hoverIdx]) : cat.label;
         drawCenter(l2CenterX, l2CenterY, prevText, cat.color, dk);
       }
     }

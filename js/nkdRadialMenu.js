@@ -197,6 +197,7 @@ function openRadial(clientX, clientY) {
     gap: 0.06,
     palette: loadPalette(),
     dark: isDark(),
+    nodeTitle: getNodeTitle,
     onSelect(catKey, value) {
       _cleanupFwd?.()
       menuOpen = false
@@ -288,6 +289,23 @@ function injectModalCSS() {
 .nkd-name-color { display:flex; gap:12px; align-items:flex-end; }
 .nkd-name-color .nkd-field:first-child { flex:1; }
 
+.nkd-val-wheel-wrap { display:flex; flex-direction:column; align-items:center; gap:8px; }
+.nkd-val-wheel-wrap canvas { cursor:pointer; }
+.nkd-val-wheel-add { font-size:12px; color:#666; cursor:pointer; padding:2px 0; }
+.nkd-val-wheel-add:hover { color:#aaa; }
+
+.nkd-val-aux { display:flex; flex-direction:column; gap:2px; }
+.nkd-val-aux-head { font-size:11px; color:#666; text-transform:uppercase; letter-spacing:0.5px;
+  padding:4px 0 2px; border-top:1px solid #333; margin-top:4px; }
+.nkd-val-aux-item { display:flex; align-items:center; gap:6px; }
+.nkd-val-aux-item span { flex:1; font-size:12px; color:#999; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.nkd-val-aux-item .nkd-val-btn { background:none; border:none; color:#666; cursor:pointer; font-size:14px; padding:2px 4px; }
+.nkd-val-aux-item .nkd-val-btn:hover { color:#ccc; }
+
+.nkd-val-edit { display:flex; gap:8px; align-items:flex-end; padding:6px 0; border-top:1px solid #333; position:relative; }
+.nkd-val-edit .nkd-field { flex:1; }
+.nkd-val-edit .nkd-field input { width:100%; }
+
 .nkd-val-list { display:flex; flex-direction:column; gap:2px; }
 .nkd-val-item { display:flex; align-items:center; gap:6px; position:relative; }
 .nkd-val-item input { flex:1; background:#222; border:1px solid #333; border-radius:4px;
@@ -298,7 +316,7 @@ function injectModalCSS() {
 .nkd-val-add { font-size:12px; color:#666; cursor:pointer; padding:4px 0; }
 .nkd-val-add:hover { color:#aaa; }
 
-.nkd-autocomplete { position:absolute; left:32px; right:80px; top:100%; z-index:100002;
+.nkd-autocomplete { position:absolute; left:0; right:0; bottom:100%; z-index:100002;
   background:#1e1e1e; border:1px solid #444; border-radius:6px; max-height:200px;
   overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.5); display:none; }
 .nkd-autocomplete.open { display:block; }
@@ -429,12 +447,7 @@ function highlightMatch(text, query) {
 
 function fuzzyMatch(query, text) {
   query = query.toLowerCase(); text = text.toLowerCase()
-  if (text.indexOf(query) >= 0) return true
-  let qi = 0
-  for (let i = 0; i < text.length && qi < query.length; i++) {
-    if (text[i] === query[qi]) qi++
-  }
-  return qi === query.length
+  return text.indexOf(query) >= 0
 }
 
 function filterIcons(query, category) {
@@ -451,7 +464,13 @@ function filterIcons(query, category) {
   })
 }
 
-function valObj(v) { return typeof v === "string" ? { label:v, icon:"" } : { label:v.label||"", icon:v.icon||"" } }
+function valObj(v) {
+  if (typeof v === "string") return { label:v, icon:"" }
+  const o = { label:v.label||"", icon:v.icon||"" }
+  if (typeof v.slot === "number") o.slot = v.slot
+  if (v.short) o.short = v.short
+  return o
+}
 
 // ─── Modal state ────────────────────────────────────────────────────────────
 
@@ -604,6 +623,207 @@ function radialCanvasXY(e) {
            y: (e.clientY - rect.top) * (RAD_SIZE / rect.height) }
 }
 
+// ─── Value wheel (second radial preview for values inside a category) ──────
+
+let valCanvas = null
+let valCtx = null
+let valDragSlot = -1
+let valDropSlot = -1
+let valEditIdx = -1
+
+const VAL_SIZE = 230
+let VAL_CX = 115, VAL_CY = 115
+const VAL_RIN = 36, VAL_ROUT = 90, VAL_CORNER = 6
+const VAL_MAX = 7
+
+// Back slot = opposite direction of the selected category on the parent wheel
+function backSlotFill() { return (editIdx + 4) % 8 }
+
+// Ensure every wheel value has a valid slot assignment (backward compat)
+function ensureSlots(cat) {
+  const bs = backSlotFill()
+  const vals = cat.values.slice(0, VAL_MAX)
+  const used = new Set()
+  for (const v of vals) {
+    if (typeof v.slot === "number" && v.slot >= 0 && v.slot < 8 && v.slot !== bs && !used.has(v.slot)) {
+      used.add(v.slot)
+    } else {
+      delete v.slot
+    }
+  }
+  for (const v of vals) {
+    if (v.slot === undefined) {
+      for (let s = 0; s < 8; s++) {
+        if (s !== bs && !used.has(s)) { v.slot = s; used.add(s); break }
+      }
+    }
+  }
+}
+
+// Build slot -> value index map for the current category
+function buildSlotMap(cat) {
+  const vals = cat.values.slice(0, VAL_MAX)
+  const m = {}
+  for (let i = 0; i < vals.length; i++) if (vals[i].slot !== undefined) m[vals[i].slot] = i
+  return m
+}
+
+function drawValueWheel() {
+  if (!valCtx || editIdx < 0 || editIdx >= editCats.length) return
+  const ctx = valCtx, cx = VAL_CX, cy = VAL_CY
+  const dk = isDark()
+  const cat = editCats[editIdx]
+  ensureSlots(cat)
+  const vals = cat.values.slice(0, VAL_MAX)
+  const n = vals.length
+  const bs = backSlotFill()
+  const sm = buildSlotMap(cat)
+  const baseColor = cat.color
+
+  ctx.clearRect(0, 0, VAL_SIZE, VAL_SIZE)
+
+  for (let s = 0; s < 8; s++) {
+    const slot = RAD_SLOT[RAD_FILL[s]]
+    const a0 = slot - RAD_SPAN/2 + RAD_GAP/2
+    const a1 = slot + RAD_SPAN/2 - RAD_GAP/2
+    const isBack = s === bs
+    const vi = sm[s]
+    const hasVal = !isBack && vi !== undefined
+    const hv = hasVal && vi === valEditIdx
+    const rOut = hv ? VAL_ROUT + 4 : VAL_ROUT
+
+    radialSector(ctx, cx, cy, VAL_RIN, rOut, a0, a1, VAL_CORNER)
+
+    if (isBack) {
+      ctx.fillStyle = dk ? "rgba(60,60,60,0.7)" : "rgba(180,180,180,0.5)"
+      ctx.fill()
+      ctx.strokeStyle = dk ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"
+      ctx.lineWidth = 0.5
+      ctx.stroke()
+      const mid = slot, lr = (VAL_RIN + VAL_ROUT) / 2
+      const tcx = cx + Math.cos(mid) * lr, tcy = cy + Math.sin(mid) * lr
+      ctx.save()
+      ctx.translate(tcx, tcy)
+      ctx.rotate(mid + Math.PI)
+      ctx.beginPath()
+      ctx.moveTo(-6, 0); ctx.lineTo(4, -5); ctx.lineTo(4, 5); ctx.closePath()
+      ctx.fillStyle = dk ? "#888" : "#666"
+      ctx.fill()
+      ctx.restore()
+    } else if (hasVal) {
+      const alpha = hv ? 1 : (dk ? 0.6 : 0.7)
+      ctx.fillStyle = rgba(baseColor, alpha)
+      ctx.fill()
+      ctx.strokeStyle = hv ? rgba(baseColor, 0.9) : rgba(baseColor, dk ? 0.3 : 0.25)
+      ctx.lineWidth = hv ? 2 : 0.5
+      ctx.stroke()
+
+      const mid = slot, lr = (VAL_RIN + VAL_ROUT) / 2
+      const tcx = cx + Math.cos(mid) * lr, tcy = cy + Math.sin(mid) * lr
+      const v = vals[vi]
+      const ICONS = getIconData()
+      if (v.icon && ICONS[v.icon]) {
+        const paths = ICONS[v.icon]
+        const sz = 14
+        ctx.save()
+        ctx.translate(tcx - sz/2, tcy - sz/2)
+        ctx.scale(sz/24, sz/24)
+        ctx.strokeStyle = textColor(baseColor)
+        ctx.lineWidth = 2 * (24/sz)
+        ctx.lineCap = "round"; ctx.lineJoin = "round"
+        for (const p of paths) ctx.stroke(new Path2D(p))
+        ctx.restore()
+      } else {
+        ctx.save()
+        ctx.translate(tcx, tcy)
+        let rot = mid
+        if (rot > Math.PI/2 && rot < Math.PI*1.5) rot += Math.PI
+        if (rot < -Math.PI/2) rot += Math.PI
+        ctx.rotate(rot)
+        ctx.fillStyle = textColor(baseColor)
+        ctx.font = (hv ? "600 " : "400 ") + "9px system-ui,sans-serif"
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"
+        const title = v.short || getNodeTitle(v.label)
+        ctx.fillText(title.length > 6 ? title.slice(0,5) + "…" : title, 0, 0)
+        ctx.restore()
+      }
+    } else {
+      ctx.fillStyle = dk ? "rgba(40,40,40,0.4)" : "rgba(200,200,200,0.3)"
+      ctx.fill()
+      ctx.strokeStyle = dk ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"
+      ctx.lineWidth = 0.5
+      ctx.stroke()
+    }
+  }
+
+  if (valDragSlot >= 0 && valDropSlot >= 0 && valDropSlot !== valDragSlot && valDropSlot !== bs) {
+    const dslot = RAD_SLOT[RAD_FILL[valDropSlot]]
+    const da0 = dslot - RAD_SPAN/2 + RAD_GAP/2
+    const da1 = dslot + RAD_SPAN/2 - RAD_GAP/2
+    radialSector(ctx, cx, cy, VAL_RIN - 2, VAL_ROUT + 6, da0, da1, VAL_CORNER)
+    ctx.strokeStyle = "#fff"
+    ctx.lineWidth = 2
+    ctx.setLineDash([4, 3])
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
+
+  ctx.beginPath()
+  ctx.arc(cx, cy, VAL_RIN - 4, 0, Math.PI*2)
+  ctx.fillStyle = dk ? "rgba(18,18,18,0.95)" : "rgba(250,250,250,0.97)"
+  ctx.fill()
+  ctx.strokeStyle = dk ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"
+  ctx.lineWidth = 1
+  ctx.stroke()
+  if (valEditIdx >= 0 && valEditIdx < n) {
+    const sv = vals[valEditIdx]
+    const title = getNodeTitle(sv.label)
+    ctx.fillStyle = baseColor
+    ctx.font = "600 10px system-ui,sans-serif"
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"
+    ctx.fillText(title.length > 12 ? title.slice(0,11) + "…" : title, cx, cy)
+  } else {
+    ctx.fillStyle = dk ? "#666" : "#999"
+    ctx.font = "10px system-ui,sans-serif"
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"
+    ctx.fillText(`${n}/${VAL_MAX}`, cx, cy)
+  }
+}
+
+// Returns the slot fill index (0-7) hit, or -1 for miss/back
+function valHitSlot(x, y) {
+  if (editIdx < 0 || editIdx >= editCats.length) return -1
+  const dx = x - VAL_CX, dy = y - VAL_CY
+  const dist = Math.sqrt(dx*dx + dy*dy)
+  if (dist < VAL_RIN || dist > VAL_ROUT + 6) return -1
+  const ang = Math.atan2(dy, dx)
+  const bs = backSlotFill()
+  for (let s = 0; s < 8; s++) {
+    const slot = RAD_SLOT[RAD_FILL[s]]
+    let a = ang
+    while (a < slot - Math.PI) a += Math.PI*2
+    while (a > slot + Math.PI) a -= Math.PI*2
+    const a0 = slot - RAD_SPAN/2 + RAD_GAP/2
+    const a1 = slot + RAD_SPAN/2 - RAD_GAP/2
+    if (a >= a0 && a <= a1) return s === bs ? -1 : s
+  }
+  return -1
+}
+
+function valCanvasXY(e) {
+  const rect = valCanvas.getBoundingClientRect()
+  return { x: (e.clientX - rect.left) * (VAL_SIZE / rect.width),
+           y: (e.clientY - rect.top) * (VAL_SIZE / rect.height) }
+}
+
+function getNodeTitle(typeId) {
+  if (!typeId) return "?"
+  const idx = getNodeIndex()
+  const entry = idx.find(e => e.type === typeId)
+  if (entry) return entry.title
+  return typeId.split("/").pop().replace(/([a-z])([A-Z])/g, "$1 $2")
+}
+
 // ─── Icon grid builder ──────────────────────────────────────────────────────
 
 function buildIconGrid(id) {
@@ -717,6 +937,7 @@ function renderCatList() {
         else if (editIdx === hit) editIdx = radialDragIdx
       } else if (hit >= 0) {
         editIdx = hit
+        valEditIdx = -1
       }
       radialDragIdx = -1; radialDropIdx = -1
       radialCanvas.style.cursor = "pointer"
@@ -754,10 +975,14 @@ function renderCatList() {
 function renderCatEdit() {
   if (editIdx < 0 || editIdx >= editCats.length) {
     catEditEl.innerHTML = `<div class="nkd-empty-hint">Select a category to edit</div>`
+    valCanvas = null; valCtx = null; valEditIdx = -1
     return
   }
   const c = editCats[editIdx]
   const catIconPreview = c.icon ? iconSvg(c.icon, 16) : "&times;"
+  const wheelCount = Math.min(c.values.length, VAL_MAX)
+  const auxValues = c.values.slice(VAL_MAX)
+
   let html = `<div class="nkd-name-color">`
     + `<div class="nkd-field"><label>Name</label><input type="text" id="nkdEditName" value="${esc(c.label)}"></div>`
     + `<div class="nkd-field"><label>Color</label><input type="color" id="nkdEditColor" value="${c.color}"></div>`
@@ -769,33 +994,128 @@ function renderCatEdit() {
     + buildIconGrid("nkdCatIconGrid")
     + `</div></div>`
     + `</div>`
-    + `<div class="nkd-field"><label>Values (${c.values.length})</label><div class="nkd-val-list" id="nkdValList">`
-  for (let i = 0; i < c.values.length; i++) {
-    const v = c.values[i]
-    const vIconPreview = v.icon ? iconSvg(v.icon, 12) : `<span style="font-size:9px;color:#666">&bull;</span>`
-    html += `<div class="nkd-val-item" data-vi="${i}">`
-      + `<div class="nkd-val-icon-picker" data-vi="${i}">`
-      + `<div class="nkd-val-icon-btn" data-vi="${i}">${vIconPreview}</div>`
-      + buildIconGrid("nkdValIconGrid" + i)
+
+  // Value wheel
+  html += `<div class="nkd-val-wheel-wrap">`
+    + `<canvas id="nkdValWheel" width="${VAL_SIZE}" height="${VAL_SIZE}"></canvas>`
+  if (wheelCount < VAL_MAX) {
+    html += `<div class="nkd-val-wheel-add" id="nkdValWheelAdd">+ Add to wheel (${wheelCount}/${VAL_MAX})</div>`
+  } else {
+    html += `<div style="font-size:11px;color:#555;">${VAL_MAX}/${VAL_MAX} wheel slots</div>`
+  }
+  html += `</div>`
+
+  // Selected value editor
+  if (valEditIdx >= 0 && valEditIdx < wheelCount) {
+    const sv = c.values[valEditIdx]
+    const svIcon = sv.icon ? iconSvg(sv.icon, 12) : `<span style="font-size:9px;color:#666">&bull;</span>`
+    html += `<div class="nkd-val-edit">`
+      + `<div class="nkd-val-icon-picker" data-vi="${valEditIdx}">`
+      + `<div class="nkd-val-icon-btn" data-vi="${valEditIdx}">${svIcon}</div>`
+      + buildIconGrid("nkdValIconGridSel")
       + `</div>`
-      + `<input type="text" value="${esc(v.label)}" data-vi="${i}" autocomplete="off">`
-      + `<div class="nkd-autocomplete" id="nkdAc${i}"></div>`
-      + `<button class="nkd-val-btn" data-vmove="up" data-vi="${i}">&uarr;</button>`
-      + `<button class="nkd-val-btn" data-vmove="down" data-vi="${i}">&darr;</button>`
-      + `<button class="nkd-val-btn" data-vdel="${i}">&times;</button>`
+      + `<div class="nkd-field"><label>Node</label><input type="text" id="nkdValEditInput" value="${esc(sv.label)}" autocomplete="off"></div>`
+      + `<div class="nkd-autocomplete" id="nkdValAc"></div>`
+      + `<div class="nkd-field" style="flex:0 0 70px"><label>Label</label><input type="text" id="nkdValShort" value="${esc(sv.short||"")}" maxlength="5" placeholder="${esc((getNodeTitle(sv.label)||"").slice(0,5))}" style="width:100%"></div>`
+      + `<button class="nkd-val-btn" id="nkdValDel" title="Remove">&times;</button>`
+      + `<button class="nkd-val-btn" id="nkdValDemote" title="Move to auxiliary list">&darr;</button>`
       + `</div>`
   }
-  html += `</div><div class="nkd-val-add" id="nkdValAdd">+ Add value</div></div>`
-    + `<div style="margin-top:auto; padding-top:12px;"><button class="nkd-btn-danger" id="nkdDelCat">Delete category</button></div>`
+
+  // Auxiliary values (overflow beyond 8)
+  if (auxValues.length > 0 || wheelCount >= VAL_MAX) {
+    html += `<div class="nkd-val-aux">`
+      + `<div class="nkd-val-aux-head">Auxiliary (${auxValues.length})</div>`
+    for (let i = 0; i < auxValues.length; i++) {
+      const ai = VAL_MAX + i
+      const av = auxValues[i]
+      html += `<div class="nkd-val-aux-item">`
+        + `<span title="${esc(av.label)}">${esc(getNodeTitle(av.label))}</span>`
+        + `<button class="nkd-val-btn" data-aux-promote="${ai}" title="Move to wheel">&uarr;</button>`
+        + `<button class="nkd-val-btn" data-aux-del="${ai}">&times;</button>`
+        + `</div>`
+    }
+    html += `<div class="nkd-val-wheel-add" id="nkdValAuxAdd">+ Add auxiliary</div>`
+    html += `</div>`
+  }
+
+  html += `<div style="margin-top:auto; padding-top:12px;"><button class="nkd-btn-danger" id="nkdDelCat">Delete category</button></div>`
   catEditEl.innerHTML = html
 
-  // Wire events
+  // ─── Wire value wheel canvas ──────────────────────────────────────────────
+  valCanvas = document.getElementById("nkdValWheel")
+  VAL_CX = VAL_SIZE / 2; VAL_CY = VAL_SIZE / 2
+  valCtx = valCanvas.getContext("2d")
+
+  valCanvas.addEventListener("mousedown", e => {
+    const p = valCanvasXY(e)
+    const hs = valHitSlot(p.x, p.y)
+    const sm = buildSlotMap(c)
+    if (hs >= 0 && sm[hs] !== undefined) {
+      valDragSlot = hs
+      valDropSlot = -1
+      valCanvas.style.cursor = "grabbing"
+    }
+  })
+  valCanvas.addEventListener("mousemove", e => {
+    if (valDragSlot < 0) return
+    const p = valCanvasXY(e)
+    const hs = valHitSlot(p.x, p.y)
+    if (hs !== valDropSlot) { valDropSlot = hs; drawValueWheel() }
+  })
+  valCanvas.addEventListener("mouseup", e => {
+    const p = valCanvasXY(e)
+    const hs = valHitSlot(p.x, p.y)
+    const sm = buildSlotMap(c)
+    const dragVi = valDragSlot >= 0 ? sm[valDragSlot] : undefined
+    const dropVi = hs >= 0 ? sm[hs] : undefined
+
+    if (valDragSlot >= 0 && hs >= 0 && hs !== valDragSlot && dragVi !== undefined) {
+      // Drag to another slot: swap slot assignments (works for empty targets too)
+      if (dropVi !== undefined) {
+        c.values[dropVi].slot = valDragSlot
+      }
+      c.values[dragVi].slot = hs
+      if (valEditIdx === dragVi) { /* keep selection */ }
+      else if (valEditIdx === dropVi) { /* keep selection */ }
+    } else if (valDragSlot < 0 && hs >= 0) {
+      // Simple click (no drag started)
+      if (dropVi !== undefined) {
+        valEditIdx = (valEditIdx === dropVi) ? -1 : dropVi
+      } else if (wheelCount < VAL_MAX) {
+        // Click empty slot → add value there
+        c.values.splice(wheelCount, 0, {label:"New item", icon:"", slot: hs})
+        valEditIdx = wheelCount
+      }
+    } else if (valDragSlot >= 0 && hs >= 0 && hs === valDragSlot) {
+      // Click (no move) on occupied slot → toggle select
+      if (dragVi !== undefined) valEditIdx = (valEditIdx === dragVi) ? -1 : dragVi
+    }
+    valDragSlot = -1; valDropSlot = -1
+    valCanvas.style.cursor = "pointer"
+    drawValueWheel()
+    renderCatEdit()
+  })
+  valCanvas.addEventListener("mouseleave", () => {
+    if (valDragSlot >= 0) {
+      valDragSlot = -1; valDropSlot = -1
+      valCanvas.style.cursor = "pointer"
+      drawValueWheel()
+    }
+  })
+
+  drawValueWheel()
+
+  // ─── Wire category fields ────────────────────────────────────────────────
   document.getElementById("nkdEditName").addEventListener("input", function() {
     c.label = this.value
     c.key = this.value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "cat"
     renderCatList()
   })
-  document.getElementById("nkdEditColor").addEventListener("input", function() { c.color = this.value; renderCatList() })
+  document.getElementById("nkdEditColor").addEventListener("input", function() {
+    c.color = this.value
+    renderCatList(); drawValueWheel()
+  })
 
   document.getElementById("nkdCatIconBtn").addEventListener("click", function(e) {
     e.stopPropagation()
@@ -814,53 +1134,45 @@ function renderCatEdit() {
     renderCatList(); renderCatEdit()
   })
 
-  catEditEl.querySelectorAll(".nkd-val-icon-btn").forEach(btn => {
-    btn.addEventListener("click", function(e) {
-      e.stopPropagation()
-      const vi = parseInt(btn.dataset.vi)
-      closeAllIconGrids()
-      const grid = document.getElementById("nkdValIconGrid" + vi)
-      positionGrid(grid, this)
-      grid.classList.toggle("open")
-      renderIconCells("nkdValIconGrid" + vi, "", "")
-      wireIconGridFilters("nkdValIconGrid" + vi)
-      markActive("nkdValIconGrid" + vi, c.values[vi].icon)
-    })
-  })
-  catEditEl.querySelectorAll(".nkd-val-icon-picker .nkd-icon-grid").forEach(grid => {
-    grid.addEventListener("click", function(e) {
-      const cell = e.target.closest(".nkd-icon-cell")
-      if (!cell) return
-      const vi = parseInt(grid.id.replace("nkdValIconGrid",""))
-      c.values[vi].icon = cell.dataset.icon
+  // ─── Wire value wheel add ────────────────────────────────────────────────
+  const wheelAddBtn = document.getElementById("nkdValWheelAdd")
+  if (wheelAddBtn) {
+    wheelAddBtn.addEventListener("click", () => {
+      ensureSlots(c)
+      const bs = backSlotFill()
+      const usedSlots = new Set(c.values.slice(0, wheelCount).map(v => v.slot))
+      let freeSlot = 0
+      for (let s = 0; s < 8; s++) { if (s !== bs && !usedSlots.has(s)) { freeSlot = s; break } }
+      c.values.splice(wheelCount, 0, {label:"New item", icon:"", slot: freeSlot})
+      valEditIdx = wheelCount
       renderCatEdit()
     })
-  })
+  }
 
-  catEditEl.querySelectorAll(".nkd-val-list > .nkd-val-item > input[data-vi]").forEach(inp => {
-    const vi = parseInt(inp.dataset.vi)
-    const acEl = document.getElementById("nkdAc" + vi)
+  // ─── Wire selected value editor ──────────────────────────────────────────
+  const valInput = document.getElementById("nkdValEditInput")
+  const valAc = document.getElementById("nkdValAc")
+  if (valInput && valAc) {
     let acIdx = -1
-
-    inp.addEventListener("input", function() {
-      c.values[vi].label = this.value
+    valInput.addEventListener("input", function() {
+      c.values[valEditIdx].label = this.value
+      drawValueWheel()
       const q = this.value.trim()
-      if (q.length < 2) { acEl.classList.remove("open"); return }
+      if (q.length < 2) { valAc.classList.remove("open"); return }
       const matches = searchNodes(q, 15)
       if (!matches.length) {
-        acEl.innerHTML = `<div class="nkd-ac-empty">No nodes matching "${esc(q)}"</div>`
+        valAc.innerHTML = `<div class="nkd-ac-empty">No nodes matching "${esc(q)}"</div>`
       } else {
-        acEl.innerHTML = matches.map(m =>
+        valAc.innerHTML = matches.map(m =>
           `<div class="nkd-ac-item" data-type="${esc(m.type)}">${highlightMatch(m.title, q)}<span style="opacity:.4;font-size:10px;margin-left:6px">${esc(m.type)}</span></div>`
         ).join("")
       }
       acIdx = -1
-      acEl.classList.add("open")
+      valAc.classList.add("open")
     })
-
-    inp.addEventListener("keydown", function(e) {
-      if (!acEl.classList.contains("open")) return
-      const items = acEl.querySelectorAll(".nkd-ac-item")
+    valInput.addEventListener("keydown", function(e) {
+      if (!valAc.classList.contains("open")) return
+      const items = valAc.querySelectorAll(".nkd-ac-item")
       if (e.key === "ArrowDown") {
         e.preventDefault()
         acIdx = Math.min(acIdx + 1, items.length - 1)
@@ -873,52 +1185,120 @@ function renderCatEdit() {
         if (items[acIdx]) items[acIdx].scrollIntoView({ block: "nearest" })
       } else if (e.key === "Enter" && acIdx >= 0 && items[acIdx]) {
         e.preventDefault()
-        c.values[vi].label = items[acIdx].dataset.type
-        inp.value = items[acIdx].dataset.type
-        acEl.classList.remove("open")
+        c.values[valEditIdx].label = items[acIdx].dataset.type
+        valInput.value = items[acIdx].dataset.type
+        valAc.classList.remove("open")
+        drawValueWheel()
       } else if (e.key === "Escape") {
-        acEl.classList.remove("open")
+        valAc.classList.remove("open")
       }
     })
-
-    acEl.addEventListener("mousedown", function(e) {
+    valAc.addEventListener("mousedown", function(e) {
       const item = e.target.closest(".nkd-ac-item")
       if (!item) return
       e.preventDefault()
-      const type = item.dataset.type
-      c.values[vi].label = type
-      inp.value = type
-      acEl.classList.remove("open")
+      c.values[valEditIdx].label = item.dataset.type
+      valInput.value = item.dataset.type
+      valAc.classList.remove("open")
+      drawValueWheel()
     })
+    valInput.addEventListener("blur", () => { setTimeout(() => valAc.classList.remove("open"), 150) })
+    valInput.focus()
+    valInput.select()
+  }
+  const valShortInput = document.getElementById("nkdValShort")
+  if (valShortInput) {
+    valShortInput.addEventListener("input", function() {
+      const v = this.value.slice(0, 5)
+      this.value = v
+      c.values[valEditIdx].short = v || undefined
+      if (!v) delete c.values[valEditIdx].short
+      drawValueWheel()
+    })
+  }
 
-    inp.addEventListener("blur", () => { setTimeout(() => acEl.classList.remove("open"), 150) })
-  })
-  catEditEl.querySelectorAll("[data-vmove]").forEach(btn => {
-    btn.addEventListener("click", function() {
-      const i = parseInt(btn.dataset.vi)
-      const dir = btn.dataset.vmove === "up" ? -1 : 1
-      const j = i + dir
-      if (j < 0 || j >= c.values.length) return
-      const tmp = c.values[i]; c.values[i] = c.values[j]; c.values[j] = tmp
+  // Wire value icon picker
+  const valIconBtn = catEditEl.querySelector(".nkd-val-icon-btn")
+  if (valIconBtn && valEditIdx >= 0) {
+    valIconBtn.addEventListener("click", function(e) {
+      e.stopPropagation()
+      closeAllIconGrids()
+      const grid = document.getElementById("nkdValIconGridSel")
+      positionGrid(grid, this)
+      grid.classList.toggle("open")
+      renderIconCells("nkdValIconGridSel", "", "")
+      wireIconGridFilters("nkdValIconGridSel")
+      markActive("nkdValIconGridSel", c.values[valEditIdx].icon)
+    })
+    const valIconGrid = document.getElementById("nkdValIconGridSel")
+    if (valIconGrid) {
+      valIconGrid.addEventListener("click", function(e) {
+        const cell = e.target.closest(".nkd-icon-cell")
+        if (!cell) return
+        c.values[valEditIdx].icon = cell.dataset.icon
+        drawValueWheel(); renderCatEdit()
+      })
+    }
+  }
+
+  // Wire delete selected value
+  const valDelBtn = document.getElementById("nkdValDel")
+  if (valDelBtn) {
+    valDelBtn.addEventListener("click", () => {
+      c.values.splice(valEditIdx, 1)
+      valEditIdx = -1
+      renderCatEdit()
+    })
+  }
+
+  // Wire demote (move from wheel to auxiliary)
+  const valDemoteBtn = document.getElementById("nkdValDemote")
+  if (valDemoteBtn) {
+    valDemoteBtn.addEventListener("click", () => {
+      const v = c.values.splice(valEditIdx, 1)[0]
+      c.values.push(v)
+      valEditIdx = -1
+      renderCatEdit()
+    })
+  }
+
+  // ─── Wire auxiliary list ─────────────────────────────────────────────────
+  catEditEl.querySelectorAll("[data-aux-promote]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const ai = parseInt(btn.dataset.auxPromote)
+      if (wheelCount >= VAL_MAX) return
+      ensureSlots(c)
+      const bs = backSlotFill()
+      const usedSlots = new Set(c.values.slice(0, wheelCount).map(v => v.slot))
+      let freeSlot = 0
+      for (let s = 0; s < 8; s++) { if (s !== bs && !usedSlots.has(s)) { freeSlot = s; break } }
+      const v = c.values.splice(ai, 1)[0]
+      v.slot = freeSlot
+      c.values.splice(wheelCount, 0, v)
+      valEditIdx = wheelCount
       renderCatEdit()
     })
   })
-  catEditEl.querySelectorAll("[data-vdel]").forEach(btn => {
-    btn.addEventListener("click", function() {
-      c.values.splice(parseInt(btn.dataset.vdel), 1)
+  catEditEl.querySelectorAll("[data-aux-del]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      c.values.splice(parseInt(btn.dataset.auxDel), 1)
       renderCatEdit()
     })
   })
-  document.getElementById("nkdValAdd").addEventListener("click", () => {
-    c.values.push({label:"New item", icon:""})
-    renderCatEdit()
-    const inputs = catEditEl.querySelectorAll(".nkd-val-list input")
-    const last = inputs[inputs.length - 1]
-    if (last) { last.focus(); last.select() }
-  })
+
+  const auxAddBtn = document.getElementById("nkdValAuxAdd")
+  if (auxAddBtn) {
+    auxAddBtn.addEventListener("click", () => {
+      c.values.push({label:"New item", icon:""})
+      renderCatEdit()
+    })
+  }
+
+  // ─── Wire delete category ────────────────────────────────────────────────
   document.getElementById("nkdDelCat").addEventListener("click", () => {
     editCats.splice(editIdx, 1)
     if (editIdx >= editCats.length) editIdx = editCats.length - 1
+    valEditIdx = -1
     renderCatList(); renderCatEdit()
   })
 }
@@ -963,7 +1343,13 @@ function buildModalDOM() {
   document.getElementById("nkdApplyBtn").addEventListener("click", () => {
     cats = editCats.map(c => ({
       key:c.key, label:c.label, color:c.color, icon:c.icon||"",
-      values:c.values.map(v => v.icon ? {label:v.label, icon:v.icon} : v.label)
+      values:c.values.map(v => {
+        const o = typeof v === "string" ? {label:v} : {label:v.label}
+        if (v.icon) o.icon = v.icon
+        if (typeof v.slot === "number") o.slot = v.slot
+        if (v.short) o.short = v.short
+        return (!o.icon && o.slot === undefined && !o.short) ? o.label : o
+      })
     }))
     saveConfig(cats)
     closeConfigModal()
@@ -1014,7 +1400,9 @@ async function openConfigModal() {
     values:(c.values||[]).map(v => valObj(v))
   }))
   editIdx = editCats.length ? 0 : -1
+  valEditIdx = -1
   radialCanvas = null; radialCtx = null
+  valCanvas = null; valCtx = null
   catListEl.innerHTML = ""
   modalBg.classList.add("open")
   renderCatList()
@@ -1131,5 +1519,35 @@ app.registerExtension({
     }, true)
 
     console.log("[NKD Radial Menu] Loaded — Alt+Click to open")
+  },
+
+  nodeCreated(node) {
+    const orig = node.getExtraMenuOptions
+    node.getExtraMenuOptions = function(canvas, options) {
+      const r = orig?.apply(this, arguments)
+      const nodeType = this.comfyClass || this.type
+      if (!nodeType) return r
+      options.push(null) // separator
+      options.push({
+        content: "Add to Radial Menu",
+        has_submenu: true,
+        callback: (value, opts, e, menu) => {
+          new LiteGraph.ContextMenu(
+            cats.map(c => c.label),
+            { event: e, parentMenu: menu, callback: (catLabel) => {
+              const c = cats.find(x => x.label === catLabel)
+              if (!c) return
+              const existing = c.values.map(v => typeof v === "string" ? v : v.label)
+              if (existing.includes(nodeType)) return
+              c.values.push(nodeType)
+              saveConfig(cats)
+              cats = loadConfig()
+            }}
+          )
+          return false
+        }
+      })
+      return r
+    }
   },
 })
