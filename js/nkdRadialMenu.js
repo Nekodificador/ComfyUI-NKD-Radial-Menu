@@ -101,7 +101,14 @@ function addNodeAt(nodeType, canvasX, canvasY) {
   if (!nodeType) return null
   const node = LiteGraph.createNode(nodeType)
   if (!node) {
-    app.ui?.dialog?.show?.(`Node "${nodeType}" is not installed.`) || alert(`Node "${nodeType}" is not installed.`)
+    try {
+      app.extensionManager.toast.add({
+        severity: "warn",
+        summary: "Missing node",
+        detail: `"${nodeType}" is not installed. Search for it in ComfyUI Manager to install.`,
+        life: 6000
+      })
+    } catch(_) { alert(`Node "${nodeType}" is not installed.`) }
     return null
   }
   const graph = app.canvas?.graph || app.graph
