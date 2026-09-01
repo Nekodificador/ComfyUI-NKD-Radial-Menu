@@ -1503,6 +1503,13 @@ app.registerExtension({
       const gm = gc.graph_mouse
       return gm ? !!gc.graph.getNodeOnPos(gm[0], gm[1]) : false
     }
+    function linkUnderCursor() {
+      const gc = app.canvas
+      if (!gc) return false
+      if (gc.over_link_center) return true
+      if (gc.highlighted_links && Object.keys(gc.highlighted_links).length) return true
+      return false
+    }
 
     // Path A: Alt already held → pointerdown opens menu
     document.addEventListener("pointerdown", (e) => {
@@ -1510,7 +1517,7 @@ app.registerExtension({
       _lastPtrId = e.pointerId
       _lastMX = e.clientX; _lastMY = e.clientY
       if (!e.altKey || e.button !== 0 || menuOpen) return
-      if (nodeUnderCursor()) return
+      if (nodeUnderCursor() || linkUnderCursor()) return
       _swallowMouseDown = true
       e.stopImmediatePropagation()
       openRadial(e.clientX, e.clientY)
@@ -1537,7 +1544,7 @@ app.registerExtension({
         return
       }
       if (e.key !== "Alt" || !_ptrDown || menuOpen) return
-      if (nodeUnderCursor()) return
+      if (nodeUnderCursor() || linkUnderCursor()) return
       const gc = app.canvas
       if (gc) {
         _pendingConnect = readConnecting(gc)
