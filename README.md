@@ -1,6 +1,6 @@
 # 😺 NKD Radial Menu
 
-A Maya-style radial marking menu for ComfyUI. Hold Alt+Click on the canvas, drag to a category, drill into it, release on the node you want. It appears where your cursor is and places the node right there.
+A radial marking menu for ComfyUI. Hold Alt+Click on the canvas, drag to a category, drill into it, release on the node you want. It appears where your cursor is and places the node right there.
 
 <!-- hero video goes here -->
 
@@ -10,7 +10,7 @@ A Maya-style radial marking menu for ComfyUI. Hold Alt+Click on the canvas, drag
 
 If you're already dragging an output and press Alt, the menu opens with the link still attached. Pick a node from the menu and it gets created and auto-connected to that output.
 
-Alt+Click on a node does nothing, so it stays out of the way of other shortcuts.
+And don't worry about duplicating nodes. Alt+Click on a node does nothing, so it stays out of the way of other shortcuts.
 
 ## Install
 
