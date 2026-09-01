@@ -1567,11 +1567,12 @@ app.registerExtension({
       if (!e.altKey || e.button !== 0 || menuOpen) return
       if (nodeUnderCursor()) { e._nkdSkip = true; return }
       const gc = app.canvas
-      const nodesBefore = gc?.graph?._nodes?.length || 0
+      // Native reroutes live in graph.reroutes (Map), legacy ones are nodes
+      const countGraph = () => (gc?.graph?._nodes?.length || 0) + (gc?.graph?.reroutes?.size || 0)
+      const before = countGraph()
       requestAnimationFrame(() => {
         if (menuOpen) return
-        const nodesAfter = gc?.graph?._nodes?.length || 0
-        if (nodesAfter > nodesBefore) return
+        if (countGraph() > before) return
         if (gc) gc.dragging_canvas = false
         openRadial(_lastMX, _lastMY)
       })
