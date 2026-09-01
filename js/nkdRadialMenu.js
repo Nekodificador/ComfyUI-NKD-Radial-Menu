@@ -1245,6 +1245,9 @@ function renderCatEdit() {
   const valDelBtn = document.getElementById("nkdValDel")
   if (valDelBtn) {
     valDelBtn.addEventListener("click", () => {
+      const v = c.values[valEditIdx]
+      const name = v ? (typeof v === "string" ? v : v.label) : ""
+      if (!confirm("Remove \"" + name + "\" from this category?")) return
       c.values.splice(valEditIdx, 1)
       valEditIdx = -1
       renderCatEdit()
@@ -1281,7 +1284,11 @@ function renderCatEdit() {
   })
   catEditEl.querySelectorAll("[data-aux-del]").forEach(btn => {
     btn.addEventListener("click", () => {
-      c.values.splice(parseInt(btn.dataset.auxDel), 1)
+      const ai = parseInt(btn.dataset.auxDel)
+      const v = c.values[ai]
+      const name = v ? (typeof v === "string" ? v : v.label) : ""
+      if (!confirm("Remove \"" + name + "\"?")) return
+      c.values.splice(ai, 1)
       renderCatEdit()
     })
   })
@@ -1295,7 +1302,9 @@ function renderCatEdit() {
   }
 
   // ─── Wire delete category ────────────────────────────────────────────────
-  document.getElementById("nkdDelCat").addEventListener("click", () => {
+  document.getElementById("nkdDelCat").addEventListener("click", (e) => {
+    const cat = editCats[editIdx]
+    if (!confirm("Delete category \"" + (cat ? cat.label : "") + "\"?")) return
     editCats.splice(editIdx, 1)
     if (editIdx >= editCats.length) editIdx = editCats.length - 1
     valEditIdx = -1
