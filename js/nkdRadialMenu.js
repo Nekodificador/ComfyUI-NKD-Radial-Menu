@@ -1505,10 +1505,47 @@ app.registerExtension({
     }
     function linkUnderCursor() {
       const gc = app.canvas
-      if (!gc) return false
-      if (gc.over_link_center) return true
-      if (gc.highlighted_links && Object.keys(gc.highlighted_links).length) return true
+      if (!gc?.graph) return false
+      const gm = gc.graph_mouse
+      if (!gm) return false
+      // Walk all links and hit-test the spline at cursor position
+      const links = gc.graph.links
+      if (!links) return false
+      for (const id in links) {
+        const link = links[id]
+        if (!link) continue
+        const from = gc.graph.getNodeById(link.origin_id)
+        const to = gc.graph.getNodeById(link.target_id)
+        if (!from || !to) continue
+        const op = from.getConnectionPos(false, link.origin_slot)
+        const ip = to.getConnectionPos(true, link.target_slot)
+        if (!op || !ip) continue
+        const d = distToSpline(gm[0], gm[1], op, ip)
+        if (d < 12) return true
+      }
       return false
+    }
+    function distToSpline(mx, my, a, b) {
+      // Approximate bezier as segments and return min distance
+      const cx1 = a[0] + (b[0] - a[0]) * 0.5, cy1 = a[1]
+      const cx2 = a[0] + (b[0] - a[0]) * 0.5, cy2 = b[1]
+      let mind = Infinity
+      let px = a[0], py = a[1]
+      for (let t = 0.1; t <= 1.0; t += 0.1) {
+        const it = 1 - t
+        const x = it*it*it*a[0] + 3*it*it*t*cx1 + 3*it*t*t*cx2 + t*t*t*b[0]
+        const y = it*it*it*a[1] + 3*it*it*t*cy1 + 3*it*t*t*cy2 + t*t*t*b[1]
+        // dist to segment px,py → x,y
+        const dx = x - px, dy = y - py
+        const len2 = dx*dx + dy*dy
+        let u = len2 > 0 ? ((mx-px)*dx + (my-py)*dy) / len2 : 0
+        if (u < 0) u = 0; if (u > 1) u = 1
+        const sx = px + u*dx, sy = py + u*dy
+        const sd = (mx-sx)*(mx-sx) + (my-sy)*(my-sy)
+        if (sd < mind) mind = sd
+        px = x; py = y
+      }
+      return Math.sqrt(mind)
     }
 
     // Path A: Alt already held → pointerdown opens menu
