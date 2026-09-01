@@ -29,6 +29,8 @@ git clone https://github.com/Nekodificador/NKD-Radial-Menu.git
 
 ## Configuration
 
+<img width="709" height="504" alt="image" src="https://github.com/user-attachments/assets/15ea6fa8-8fb8-4071-92ea-de4a5032f809" />
+
 Open **Settings** in ComfyUI. You'll find two entries under NKD Radial Menu:
 
 **Color Palette** chooses the look of the menu. Five built-in palettes: `nkd` (colorful), `ink` (dark monochrome, the default), `paper` (light monochrome), `warm`, and `cool`.
