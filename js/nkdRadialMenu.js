@@ -1494,6 +1494,7 @@ app.registerExtension({
     // compatibility mousedown so LiteGraph doesn't start panning.
     let _swallowMouseDown = false
     let _ptrDown = false
+    let _ptrClaimed = false
     let _lastPtrId = -1
     let _lastMX = 0, _lastMY = 0
 
@@ -1537,10 +1538,14 @@ app.registerExtension({
     // then open the menu only if nothing happened.
     document.addEventListener("pointerdown", (e) => {
       _ptrDown = true
+      _ptrClaimed = false
       _lastPtrId = e.pointerId
       _lastMX = e.clientX; _lastMY = e.clientY
-      if (!e.altKey || e.button !== 0 || menuOpen) return
-      if (nodeUnderCursor() || linkUnderCursor()) return
+      if (e.button !== 0 || menuOpen) return
+      // A press that starts on a node or a link belongs to the canvas for
+      // its whole duration (drag, reroute drag), never to the menu.
+      if (nodeUnderCursor() || linkUnderCursor()) { _ptrClaimed = true; return }
+      if (!e.altKey) return
       const gc = app.canvas
       // Native reroutes live in graph.reroutes (Map), legacy ones are nodes
       const countGraph = () => (gc?.graph?._nodes?.length || 0) + (gc?.graph?.reroutes?.size || 0)
@@ -1565,7 +1570,7 @@ app.registerExtension({
         closeRadial()
         return
       }
-      if (e.key !== "Alt" || !_ptrDown || menuOpen) return
+      if (e.key !== "Alt" || e.repeat || !_ptrDown || _ptrClaimed || menuOpen) return
       if (nodeUnderCursor() || linkUnderCursor()) return
       const gc = app.canvas
       if (gc) {
