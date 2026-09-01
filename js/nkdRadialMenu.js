@@ -1503,10 +1503,19 @@ app.registerExtension({
       const gm = gc.graph_mouse
       return gm ? !!gc.graph.getNodeOnPos(gm[0], gm[1]) : false
     }
+    function clientToGraph(cx, cy) {
+      const gc = app.canvas
+      if (!gc) return null
+      const rect = gc.canvas?.getBoundingClientRect?.()
+      if (!rect) return gc.graph_mouse
+      const x = (cx - rect.left) / gc.ds.scale - gc.ds.offset[0]
+      const y = (cy - rect.top) / gc.ds.scale - gc.ds.offset[1]
+      return [x, y]
+    }
     function linkUnderCursor() {
       const gc = app.canvas
       if (!gc?.graph) return false
-      const gm = gc.graph_mouse
+      const gm = clientToGraph(_lastMX, _lastMY)
       if (!gm) return false
       // Walk all links and hit-test the spline at cursor position
       const links = gc.graph.links
@@ -1549,23 +1558,23 @@ app.registerExtension({
     }
 
     // Path A: Alt already held → pointerdown opens menu
+    // Let LiteGraph process the event first (reroute creation, etc.),
+    // then open the menu only if nothing happened.
     document.addEventListener("pointerdown", (e) => {
       _ptrDown = true
       _lastPtrId = e.pointerId
       _lastMX = e.clientX; _lastMY = e.clientY
       if (!e.altKey || e.button !== 0 || menuOpen) return
-      if (nodeUnderCursor() || linkUnderCursor()) return
-      _swallowMouseDown = true
-      e.stopImmediatePropagation()
-      openRadial(e.clientX, e.clientY)
-    }, true)
-
-    // Swallow the compatibility mousedown so LiteGraph doesn't see it
-    document.addEventListener("mousedown", (e) => {
-      if (_swallowMouseDown) {
-        _swallowMouseDown = false
-        e.stopImmediatePropagation()
-      }
+      if (nodeUnderCursor()) { e._nkdSkip = true; return }
+      const gc = app.canvas
+      const nodesBefore = gc?.graph?._nodes?.length || 0
+      requestAnimationFrame(() => {
+        if (menuOpen) return
+        const nodesAfter = gc?.graph?._nodes?.length || 0
+        if (nodesAfter > nodesBefore) return
+        if (gc) gc.dragging_canvas = false
+        openRadial(_lastMX, _lastMY)
+      })
     }, true)
 
     document.addEventListener("pointerup", () => { _ptrDown = false }, true)
