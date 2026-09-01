@@ -2,7 +2,7 @@
 
 A radial marking menu for ComfyUI. Hold Alt+Click on the canvas, drag to a category, drill into it, release on the node you want. It appears where your cursor is and places the node right there.
 
-<!-- hero video goes here -->
+https://github.com/user-attachments/assets/19ea8fed-8255-4100-b075-65afda3a2ddc
 
 ## How it works
 
