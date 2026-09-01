@@ -1512,49 +1512,24 @@ app.registerExtension({
       const y = (cy - rect.top) / gc.ds.scale - gc.ds.offset[1]
       return [x, y]
     }
+    // Same hit-test the canvas uses for Alt+click reroutes: stroke test
+    // against the link paths it rendered last frame.
     function linkUnderCursor() {
       const gc = app.canvas
-      if (!gc?.graph) return false
+      const ctx = gc?.ctx
+      const paths = gc?.renderedPaths
+      if (!ctx || !paths) return false
       const gm = clientToGraph(_lastMX, _lastMY)
       if (!gm) return false
-      // Walk all links and hit-test the spline at cursor position
-      const links = gc.graph.links
-      if (!links) return false
-      for (const id in links) {
-        const link = links[id]
-        if (!link) continue
-        const from = gc.graph.getNodeById(link.origin_id)
-        const to = gc.graph.getNodeById(link.target_id)
-        if (!from || !to) continue
-        const op = from.getConnectionPos(false, link.origin_slot)
-        const ip = to.getConnectionPos(true, link.target_slot)
-        if (!op || !ip) continue
-        const d = distToSpline(gm[0], gm[1], op, ip)
-        if (d < 12) return true
+      const dpr = Math.max(window.devicePixelRatio || 1, 1)
+      const lw = ctx.lineWidth
+      ctx.lineWidth = (gc.connections_width || 3) + 7
+      let hit = false
+      for (const p of paths) {
+        if (p?.path && ctx.isPointInStroke(p.path, gm[0] * dpr, gm[1] * dpr)) { hit = true; break }
       }
-      return false
-    }
-    function distToSpline(mx, my, a, b) {
-      // Approximate bezier as segments and return min distance
-      const cx1 = a[0] + (b[0] - a[0]) * 0.5, cy1 = a[1]
-      const cx2 = a[0] + (b[0] - a[0]) * 0.5, cy2 = b[1]
-      let mind = Infinity
-      let px = a[0], py = a[1]
-      for (let t = 0.1; t <= 1.0; t += 0.1) {
-        const it = 1 - t
-        const x = it*it*it*a[0] + 3*it*it*t*cx1 + 3*it*t*t*cx2 + t*t*t*b[0]
-        const y = it*it*it*a[1] + 3*it*it*t*cy1 + 3*it*t*t*cy2 + t*t*t*b[1]
-        // dist to segment px,py → x,y
-        const dx = x - px, dy = y - py
-        const len2 = dx*dx + dy*dy
-        let u = len2 > 0 ? ((mx-px)*dx + (my-py)*dy) / len2 : 0
-        if (u < 0) u = 0; if (u > 1) u = 1
-        const sx = px + u*dx, sy = py + u*dy
-        const sd = (mx-sx)*(mx-sx) + (my-sy)*(my-sy)
-        if (sd < mind) mind = sd
-        px = x; py = y
-      }
-      return Math.sqrt(mind)
+      ctx.lineWidth = lw
+      return hit
     }
 
     // Path A: Alt already held → pointerdown opens menu
@@ -1565,7 +1540,7 @@ app.registerExtension({
       _lastPtrId = e.pointerId
       _lastMX = e.clientX; _lastMY = e.clientY
       if (!e.altKey || e.button !== 0 || menuOpen) return
-      if (nodeUnderCursor()) { e._nkdSkip = true; return }
+      if (nodeUnderCursor() || linkUnderCursor()) return
       const gc = app.canvas
       // Native reroutes live in graph.reroutes (Map), legacy ones are nodes
       const countGraph = () => (gc?.graph?._nodes?.length || 0) + (gc?.graph?.reroutes?.size || 0)
