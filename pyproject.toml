@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-nkd-radial-menu"
-version = "1.2.0"
+version = "1.2.1"
 description = "Radial marking menu for ComfyUI. Alt+Click to open, hold-drag-release to select and place nodes."
 license = "MIT"
 requires-python = ">=3.10"

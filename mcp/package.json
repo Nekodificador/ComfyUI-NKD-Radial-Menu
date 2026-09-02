@@ -1,6 +1,6 @@
 {
   "name": "nkd-radial-menu-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

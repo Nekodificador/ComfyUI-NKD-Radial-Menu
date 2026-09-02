@@ -124,8 +124,8 @@ If your ComfyUI installation is not at the default relative path, set `NKD_RADIA
 | `add_category` | Add a new category (max 8) |
 | `update_category` | Update a category by key or index |
 | `remove_category` | Remove a category |
-| `add_value` | Add a node to a category |
-| `remove_value` | Remove a node from a category |
+| `add_value` | Add a node or Node Template to a category, with optional icon, slot, short label and saved widget values. If it's already there, it's updated in place |
+| `remove_value` | Remove a node or Node Template from a category |
 | `swap_categories` | Swap two categories by index |
 
 Values are ComfyUI node type IDs (e.g. `KSampler`, `CLIPTextEncode`, `CheckpointLoaderSimple`), either as a plain string or as an object with optional `icon`, `slot` (0 to 7, position on the wheel), `short` (label of up to 5 characters) and `defaults` (widget name to value, applied when the node is created). A Node Template entry uses the template's name as `label` plus `template: true`. Icons are Lucide icon names from [lucide.dev/icons](https://lucide.dev/icons).

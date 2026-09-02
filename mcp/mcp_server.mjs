@@ -34,7 +34,23 @@ function keyFrom(label) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "cat";
 }
 
-const server = new McpServer({ name: "nkd-radial-menu", version: "1.0.0" });
+// A value is a node type ID, or an object around one. `template: true` means
+// `label` is the name of a ComfyUI Node Template instead of a node type.
+const valueSchema = z.union([
+  z.string(),
+  z.object({
+    label: z.string().describe("Node type ID, or Node Template name when template is true"),
+    icon: z.string().optional().describe("Lucide icon name"),
+    slot: z.number().int().min(0).max(7).optional().describe("Wheel position"),
+    short: z.string().max(5).optional().describe("Short label for the wheel (max 5 chars)"),
+    defaults: z.record(z.any()).optional().describe("Widget name → value, applied when the node is created"),
+    template: z.boolean().optional().describe("True if label names a ComfyUI Node Template"),
+  }),
+]);
+
+const labelOf = v => (typeof v === "string" ? v : v.label);
+
+const server = new McpServer({ name: "nkd-radial-menu", version: "1.1.0" });
 
 server.tool("get_config", "Get the radial menu categories from ComfyUI settings", {}, () => {
   const cats = readCategories();
@@ -49,7 +65,7 @@ server.tool(
     label: z.string(),
     color: z.string(),
     icon: z.string().optional(),
-    values: z.array(z.string()),
+    values: z.array(valueSchema),
   })).max(8) },
   ({ categories }) => {
     const cats = categories.map(c => ({ ...c, key: c.key || keyFrom(c.label) }));
@@ -65,7 +81,7 @@ server.tool(
     label: z.string().describe("Display name"),
     color: z.string().describe("Hex color, e.g. #4ab4ff"),
     icon: z.string().optional().describe("Lucide icon name (see lucide.dev/icons)"),
-    values: z.array(z.string()).optional().describe("Initial node type IDs"),
+    values: z.array(valueSchema).optional().describe("Initial values (node type IDs or value objects)"),
     position: z.number().int().min(0).max(7).optional().describe("Insert position (0-7), appends if omitted"),
   },
   ({ label, color, icon, values, position }) => {
@@ -91,7 +107,7 @@ server.tool(
     label: z.string().optional(),
     color: z.string().optional(),
     icon: z.string().optional(),
-    values: z.array(z.string()).optional().describe("Replaces all values if provided"),
+    values: z.array(valueSchema).optional().describe("Replaces all values if provided"),
   },
   ({ key, index, label, color, icon, values }) => {
     const cats = readCategories();
@@ -123,21 +139,37 @@ server.tool(
 
 server.tool(
   "add_value",
-  "Add a node to a category",
+  "Add a node or Node Template to a category, or update it in place if it is already there (icon, slot and short are kept unless given)",
   {
     key: z.string().optional().describe("Category key"),
     index: z.number().int().min(0).max(7).optional().describe("Category index"),
-    value: z.string().describe("ComfyUI node type ID (e.g. KSampler, CLIPTextEncode)"),
+    value: z.string().describe("ComfyUI node type ID (e.g. KSampler), or a Node Template name when template is true"),
+    icon: z.string().optional().describe("Lucide icon name"),
+    slot: z.number().int().min(0).max(7).optional().describe("Wheel position"),
+    short: z.string().max(5).optional().describe("Short label for the wheel (max 5 chars)"),
+    defaults: z.record(z.any()).optional().describe("Widget name → value, applied when the node is created"),
+    template: z.boolean().optional().describe("True if value names a ComfyUI Node Template"),
   },
-  ({ key, index, value }) => {
+  ({ key, index, value, icon, slot, short, defaults, template }) => {
     const cats = readCategories();
     let i = index ?? cats.findIndex(c => c.key === key);
     if (i < 0 || i >= cats.length) return { content: [{ type: "text", text: "Error: category not found." }] };
     const cat = cats[i];
-    if (cat.values.includes(value)) return { content: [{ type: "text", text: `"${value}" already exists in "${cat.label}".` }] };
-    cat.values.push(value);
+    const vi = cat.values.findIndex(v => labelOf(v) === value && !!(typeof v === "object" && v.template) === !!template);
+    const prev = vi >= 0 ? cat.values[vi] : null;
+    const o = typeof prev === "object" && prev ? { ...prev } : { label: value };
+    if (icon !== undefined) o.icon = icon;
+    if (slot !== undefined) o.slot = slot;
+    if (short !== undefined) o.short = short;
+    if (defaults !== undefined) o.defaults = defaults;
+    if (template) o.template = true; else if (template === false) delete o.template;
+    for (const k of ["icon", "short"]) if (!o[k]) delete o[k];
+    const bare = !o.icon && o.slot === undefined && !o.short && !o.defaults && !o.template;
+    const entry = bare ? o.label : o;
+    if (vi >= 0) cat.values[vi] = entry; else cat.values.push(entry);
     writeCategories(cats);
-    return { content: [{ type: "text", text: `Added "${value}" to "${cat.label}" (${cat.values.length} values). Reload ComfyUI to see changes.` }] };
+    const verb = vi >= 0 ? "Updated" : "Added";
+    return { content: [{ type: "text", text: `${verb} "${value}" in "${cat.label}" (${cat.values.length} values). Reload ComfyUI to see changes.` }] };
   }
 );
 
@@ -147,14 +179,14 @@ server.tool(
   {
     key: z.string().optional(),
     index: z.number().int().min(0).max(7).optional(),
-    value: z.string().describe("Node type ID to remove"),
+    value: z.string().describe("Node type ID or Node Template name to remove"),
   },
   ({ key, index, value }) => {
     const cats = readCategories();
     let i = index ?? cats.findIndex(c => c.key === key);
     if (i < 0 || i >= cats.length) return { content: [{ type: "text", text: "Error: category not found." }] };
     const cat = cats[i];
-    const vi = cat.values.indexOf(value);
+    const vi = cat.values.findIndex(v => labelOf(v) === value);
     if (vi < 0) return { content: [{ type: "text", text: `"${value}" not found in "${cat.label}".` }] };
     cat.values.splice(vi, 1);
     writeCategories(cats);
