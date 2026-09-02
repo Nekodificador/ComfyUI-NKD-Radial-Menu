@@ -17,6 +17,8 @@ It stays out of the way of ComfyUI's own Alt shortcuts. Alt+Click on a node, on 
 
 If you pick a node that isn't installed (say, from a configuration a friend shared), a toast tells you which node is missing so you can look it up in the Manager.
 
+The wheel can also hold your ComfyUI **Node Templates** (the ones you save with "Save Selected as Template"). Pick one and the whole template, links included, lands where you opened the menu.
+
 ## Install
 
 ### ComfyUI Manager
@@ -45,7 +47,7 @@ Open **Settings** in ComfyUI. You'll find two entries under NKD Radial Menu:
 
 - Add, remove and reorder categories (up to 8)
 - Drag categories on the radial preview to rearrange them
-- Add nodes to each category by searching their display name (the same names you see in ComfyUI's native search)
+- Add nodes to each category by searching their display name (the same names you see in ComfyUI's native search). Your saved Node Templates show up in the same search, marked as templates
 - Place each node on any of the 8 wheel slots by clicking the slot you want
 - Keep more than 8 nodes per category: the extra ones go to an auxiliary list, and you can swap any of them into the wheel later
 - Give a node a short label (up to 5 characters) for the wheel. Without one, the wheel shows the node's display name split over two lines
@@ -57,6 +59,8 @@ Deleting a category or a node asks for confirmation first.
 ### Adding nodes from the canvas
 
 Right-click any node and choose **Add to Radial Menu**, then the category. Handy when you're already using a node and want it one gesture away next time.
+
+The node's current widget values are saved along with it. Next time you create it from the wheel it comes pre-filled with those values instead of the stock defaults. If the node is already in that category, saving it again just refreshes its values: the wheel entry keeps its icon, slot and label, and nothing gets duplicated. Nodes added from the configuration modal don't carry saved values; the canvas is where you set them.
 
 ## Default categories
 
@@ -124,7 +128,7 @@ If your ComfyUI installation is not at the default relative path, set `NKD_RADIA
 | `remove_value` | Remove a node from a category |
 | `swap_categories` | Swap two categories by index |
 
-Values are ComfyUI node type IDs (e.g. `KSampler`, `CLIPTextEncode`, `CheckpointLoaderSimple`), either as a plain string or as an object with optional `icon`, `slot` (0 to 7, position on the wheel) and `short` (label of up to 5 characters). Icons are Lucide icon names from [lucide.dev/icons](https://lucide.dev/icons).
+Values are ComfyUI node type IDs (e.g. `KSampler`, `CLIPTextEncode`, `CheckpointLoaderSimple`), either as a plain string or as an object with optional `icon`, `slot` (0 to 7, position on the wheel), `short` (label of up to 5 characters) and `defaults` (widget name to value, applied when the node is created). A Node Template entry uses the template's name as `label` plus `template: true`. Icons are Lucide icon names from [lucide.dev/icons](https://lucide.dev/icons).
 
 ## License
 

@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js"
+import { api } from "../../scripts/api.js"
 
 const SETTING_PREFIX = "NKD Radial Menu."
 
@@ -97,19 +98,23 @@ function screenToCanvas(screenX, screenY) {
   ]
 }
 
-function addNodeAt(nodeType, canvasX, canvasY) {
+function toast(severity, summary, detail) {
+  try {
+    app.extensionManager.toast.add({ severity, summary, detail, life: severity === "warn" ? 6000 : 2500 })
+  } catch(_) { if (severity === "warn") alert(`${summary}: ${detail}`) }
+}
+
+function addNodeAt(nodeType, canvasX, canvasY, defaults) {
   if (!nodeType) return null
   const node = LiteGraph.createNode(nodeType)
   if (!node) {
-    try {
-      app.extensionManager.toast.add({
-        severity: "warn",
-        summary: "Missing node",
-        detail: `"${nodeType}" is not installed. Search for it in ComfyUI Manager to install.`,
-        life: 6000
-      })
-    } catch(_) { alert(`Node "${nodeType}" is not installed.`) }
+    toast("warn", "Missing node", `"${nodeType}" is not installed. Search for it in ComfyUI Manager to install.`)
     return null
+  }
+  if (defaults) {
+    for (const w of node.widgets || []) {
+      if (w.name in defaults) w.value = defaults[w.name]
+    }
   }
   const graph = app.canvas?.graph || app.graph
   graph.add(node)
@@ -117,6 +122,48 @@ function addNodeAt(nodeType, canvasX, canvasY) {
   app.canvas?.setDirty?.(true, true)
   app.graph?.afterChange?.()
   return node
+}
+
+// ─── ComfyUI native Node Templates (user-data file comfy.templates.json) ───
+
+let _templates = []
+async function loadTemplates() {
+  try {
+    const r = await api.getUserData("comfy.templates.json")
+    const data = r.status === 200 ? await r.json() : []
+    _templates = Array.isArray(data) ? data : []
+  } catch { _templates = [] }
+  return _templates
+}
+
+function searchTemplates(query, limit) {
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!tokens.length) return []
+  const out = []
+  for (const t of _templates) {
+    const s = (t.name || "").toLowerCase()
+    if (tokens.every(k => s.includes(k))) { out.push(t.name); if (out.length >= (limit || 10)) break }
+  }
+  return out
+}
+
+const CLIP_KEY = "litegrapheditor_clipboard"
+async function insertTemplateAt(name, canvasX, canvasY) {
+  const t = (await loadTemplates()).find(t => t.name === name)
+  if (!t) {
+    toast("warn", "Missing template", `Node template "${name}" no longer exists in ComfyUI.`)
+    return
+  }
+  const canvas = app.canvas
+  const prev = localStorage.getItem(CLIP_KEY)
+  localStorage.setItem(CLIP_KEY, t.data)
+  // ponytail: paste lands at graph_mouse; pointing it at the menu origin
+  // positions nodes, groups and reroutes in one go, no bbox math.
+  canvas.graph_mouse = [canvasX, canvasY]
+  try { canvas.pasteFromClipboard() }
+  finally { prev === null ? localStorage.removeItem(CLIP_KEY) : localStorage.setItem(CLIP_KEY, prev) }
+  canvas.setDirty?.(true, true)
+  app.graph?.afterChange?.()
 }
 
 // ─── Link auto-connect (from quickConnect pattern in NKD-Reroutes) ─────────
@@ -198,18 +245,27 @@ function openRadial(clientX, clientY) {
   menuOpen = true
   openPos = screenToCanvas(clientX, clientY)
 
+  const templateLabels = new Set()
+  for (const c of cats) for (const v of c.values) if (v.template) templateLabels.add(v.label)
+
   radialTeardown = nkdRadial({ clientX, clientY }, {
     categories: cats,
     style: "donut",
     gap: 0.06,
     palette: loadPalette(),
     dark: isDark(),
-    nodeTitle: getNodeTitle,
-    onSelect(catKey, value) {
+    nodeTitle: lbl => templateLabels.has(lbl) ? lbl : getNodeTitle(lbl),
+    onSelect(catKey, value, catIdx, valIdx) {
       _cleanupFwd?.()
       menuOpen = false
       radialTeardown = null
-      const node = addNodeAt(value, openPos[0], openPos[1])
+      const item = cats[catIdx]?.values?.[valIdx]
+      if (item?.template) {
+        if (_pendingConnect) { endDrag(app.canvas); _pendingConnect = null }
+        insertTemplateAt(item.label, openPos[0], openPos[1])
+        return
+      }
+      const node = addNodeAt(value, openPos[0], openPos[1], item?.defaults)
       if (_pendingConnect && node) {
         autoConnect(_pendingConnect, node)
       }
@@ -478,6 +534,8 @@ function valObj(v) {
   const o = { label:v.label||"", icon:v.icon||"" }
   if (typeof v.slot === "number") o.slot = v.slot
   if (v.short) o.short = v.short
+  if (v.template) o.template = true
+  if (v.defaults) o.defaults = v.defaults
   return o
 }
 
@@ -752,7 +810,7 @@ function drawValueWheel() {
         ctx.fillStyle = textColor(baseColor)
         ctx.font = (hv ? "600 " : "400 ") + "9px system-ui,sans-serif"
         ctx.textAlign = "center"; ctx.textBaseline = "middle"
-        const title = v.short || getNodeTitle(v.label)
+        const title = v.short || itemTitle(v)
         ctx.fillText(title.length > 6 ? title.slice(0,5) + "…" : title, 0, 0)
         ctx.restore()
       }
@@ -786,7 +844,7 @@ function drawValueWheel() {
   ctx.stroke()
   if (valEditIdx >= 0 && valEditIdx < n) {
     const sv = vals[valEditIdx]
-    const title = getNodeTitle(sv.label)
+    const title = itemTitle(sv)
     ctx.fillStyle = baseColor
     ctx.font = "600 10px system-ui,sans-serif"
     ctx.textAlign = "center"; ctx.textBaseline = "middle"
@@ -832,6 +890,8 @@ function getNodeTitle(typeId) {
   if (entry) return entry.title
   return typeId.split("/").pop().replace(/([a-z])([A-Z])/g, "$1 $2")
 }
+
+function itemTitle(v) { return v.template ? v.label : getNodeTitle(v.label) }
 
 // ─── Icon grid builder ──────────────────────────────────────────────────────
 
@@ -1024,9 +1084,9 @@ function renderCatEdit() {
       + `<div class="nkd-val-icon-btn" data-vi="${valEditIdx}">${svIcon}</div>`
       + buildIconGrid("nkdValIconGridSel")
       + `</div>`
-      + `<div class="nkd-field"><label>Node</label><input type="text" id="nkdValEditInput" value="${esc(sv.label)}" autocomplete="off"></div>`
+      + `<div class="nkd-field"><label>${sv.template ? "Template" : "Node"}${sv.defaults ? ` <span title="Has saved defaults" style="color:#7F77DD">&#9679;</span>` : ""}</label><input type="text" id="nkdValEditInput" value="${esc(sv.label)}" autocomplete="off"></div>`
       + `<div class="nkd-autocomplete" id="nkdValAc"></div>`
-      + `<div class="nkd-field" style="flex:0 0 70px"><label>Label</label><input type="text" id="nkdValShort" value="${esc(sv.short||"")}" maxlength="5" placeholder="${esc((getNodeTitle(sv.label)||"").slice(0,5))}" style="width:100%"></div>`
+      + `<div class="nkd-field" style="flex:0 0 70px"><label>Label</label><input type="text" id="nkdValShort" value="${esc(sv.short||"")}" maxlength="5" placeholder="${esc((itemTitle(sv)||"").slice(0,5))}" style="width:100%"></div>`
       + `<button class="nkd-val-btn" id="nkdValDel" title="Remove">&times;</button>`
       + (isWheel ? `<button class="nkd-val-btn" id="nkdValDemote" title="Move to auxiliary list">&darr;</button>` : ``)
       + `</div>`
@@ -1040,7 +1100,7 @@ function renderCatEdit() {
       const ai = VAL_MAX + i
       const av = auxValues[i]
       html += `<div class="nkd-val-aux-item${valEditIdx === ai ? " active" : ""}" data-aux-select="${ai}">`
-        + `<span title="${esc(av.label)}">${esc(getNodeTitle(av.label))}</span>`
+        + `<span title="${esc(av.label)}">${esc(itemTitle(av))}</span>`
         + `<button class="nkd-val-btn" data-aux-promote="${ai}" title="Move to wheel">&uarr;</button>`
         + `<button class="nkd-val-btn" data-aux-del="${ai}">&times;</button>`
         + `</div>`
@@ -1164,16 +1224,31 @@ function renderCatEdit() {
   const valAc = document.getElementById("nkdValAc")
   if (valInput && valAc) {
     let acIdx = -1
+    // Any hand edit turns the item back into a plain node lookup and
+    // invalidates defaults captured for the previous type.
+    const pickAc = (el) => {
+      const v = c.values[valEditIdx]
+      v.label = el.dataset.type
+      delete v.defaults
+      if (el.dataset.tpl) v.template = true; else delete v.template
+      valAc.classList.remove("open")
+      renderCatEdit()
+    }
     valInput.addEventListener("input", function() {
-      c.values[valEditIdx].label = this.value
+      const v = c.values[valEditIdx]
+      v.label = this.value
+      delete v.template; delete v.defaults
       drawValueWheel()
       const q = this.value.trim()
       if (q.length < 2) { valAc.classList.remove("open"); return }
       const matches = searchNodes(q, 15)
-      if (!matches.length) {
-        valAc.innerHTML = `<div class="nkd-ac-empty">No nodes matching "${esc(q)}"</div>`
+      const tmatches = searchTemplates(q, 10)
+      if (!matches.length && !tmatches.length) {
+        valAc.innerHTML = `<div class="nkd-ac-empty">No nodes or templates matching "${esc(q)}"</div>`
       } else {
-        valAc.innerHTML = matches.map(m =>
+        valAc.innerHTML = tmatches.map(n =>
+          `<div class="nkd-ac-item" data-type="${esc(n)}" data-tpl="1">${highlightMatch(n, q)}<span style="opacity:.5;font-size:10px;margin-left:6px;color:#7F77DD">template</span></div>`
+        ).join("") + matches.map(m =>
           `<div class="nkd-ac-item" data-type="${esc(m.type)}">${highlightMatch(m.title, q)}<span style="opacity:.4;font-size:10px;margin-left:6px">${esc(m.type)}</span></div>`
         ).join("")
       }
@@ -1195,10 +1270,7 @@ function renderCatEdit() {
         if (items[acIdx]) items[acIdx].scrollIntoView({ block: "nearest" })
       } else if (e.key === "Enter" && acIdx >= 0 && items[acIdx]) {
         e.preventDefault()
-        c.values[valEditIdx].label = items[acIdx].dataset.type
-        valInput.value = items[acIdx].dataset.type
-        valAc.classList.remove("open")
-        drawValueWheel()
+        pickAc(items[acIdx])
       } else if (e.key === "Escape") {
         valAc.classList.remove("open")
       }
@@ -1207,10 +1279,7 @@ function renderCatEdit() {
       const item = e.target.closest(".nkd-ac-item")
       if (!item) return
       e.preventDefault()
-      c.values[valEditIdx].label = item.dataset.type
-      valInput.value = item.dataset.type
-      valAc.classList.remove("open")
-      drawValueWheel()
+      pickAc(item)
     })
     valInput.addEventListener("blur", () => { setTimeout(() => valAc.classList.remove("open"), 150) })
     valInput.focus()
@@ -1376,7 +1445,9 @@ function buildModalDOM() {
         if (v.icon) o.icon = v.icon
         if (typeof v.slot === "number") o.slot = v.slot
         if (v.short) o.short = v.short
-        return (!o.icon && o.slot === undefined && !o.short) ? o.label : o
+        if (v.template) o.template = true
+        if (v.defaults) o.defaults = v.defaults
+        return (!o.icon && o.slot === undefined && !o.short && !o.template && !o.defaults) ? o.label : o
       })
     }))
     saveConfig(cats)
@@ -1421,6 +1492,7 @@ function buildModalDOM() {
 
 async function openConfigModal() {
   await ensureScripts()
+  await loadTemplates()
   buildModalDOM()
   cats = loadConfig()
   editCats = cats.map(c => ({
@@ -1592,6 +1664,11 @@ app.registerExtension({
       const r = orig?.apply(this, arguments)
       const nodeType = this.comfyClass || this.type
       if (!nodeType) return r
+      const defaults = {}
+      for (const w of this.widgets || []) {
+        if (w.name && w.type !== "button") defaults[w.name] = w.value
+      }
+      const hasDefaults = Object.keys(defaults).length > 0
       options.push(null) // separator
       options.push({
         content: "Add to Radial Menu",
@@ -1602,11 +1679,19 @@ app.registerExtension({
             { event: e, parentMenu: menu, callback: (catLabel) => {
               const c = cats.find(x => x.label === catLabel)
               if (!c) return
-              const existing = c.values.map(v => typeof v === "string" ? v : v.label)
-              if (existing.includes(nodeType)) return
-              c.values.push(nodeType)
+              const i = c.values.findIndex(v =>
+                typeof v === "string" ? v === nodeType : (!v.template && v.label === nodeType))
+              if (i >= 0) {
+                const v = typeof c.values[i] === "string" ? { label: c.values[i] } : c.values[i]
+                if (hasDefaults) v.defaults = defaults; else delete v.defaults
+                c.values[i] = v
+              } else {
+                c.values.push(hasDefaults ? { label: nodeType, defaults } : nodeType)
+              }
               saveConfig(cats)
               cats = loadConfig()
+              toast("success", i >= 0 ? "Radial Menu updated" : "Added to Radial Menu",
+                `${getNodeTitle(nodeType)} → ${c.label}${hasDefaults ? " (current values saved as defaults)" : ""}`)
             }}
           )
           return false
