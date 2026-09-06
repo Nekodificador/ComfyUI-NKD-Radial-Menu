@@ -1573,7 +1573,12 @@ app.registerExtension({
     function nodeUnderCursor() {
       const gc = app.canvas
       if (!gc?.graph) return true // conservative: assume yes
-      const gm = gc.graph_mouse
+      // From the event's own position, NOT gc.graph_mouse: LiteGraph only updates that
+      // while the pointer moves over the bare graph canvas, so over a DOM widget (a paint
+      // canvas, a timeline) it is frozen wherever the mouse last crossed the graph. That
+      // stale spot was often empty space, so an Alt+click meant for the widget opened the
+      // menu instead - until the user happened to click the node's frame first.
+      const gm = clientToGraph(_lastMX, _lastMY) || gc.graph_mouse
       return gm ? !!gc.graph.getNodeOnPos(gm[0], gm[1]) : false
     }
     function clientToGraph(cx, cy) {
@@ -1614,8 +1619,11 @@ app.registerExtension({
       _lastMX = e.clientX; _lastMY = e.clientY
       if (e.button !== 0 || menuOpen) return
       // A press that starts on a node or a link belongs to the canvas for
-      // its whole duration (drag, reroute drag), never to the menu.
-      if (nodeUnderCursor() || linkUnderCursor()) { _ptrClaimed = true; return }
+      // its whole duration (drag, reroute drag), never to the menu. Same for a press
+      // that never reaches the graph canvas at all (a DOM widget, a dialog, a panel):
+      // the menu only ever opens from the bare graph.
+      const onGraph = !app.canvas?.canvas || e.target === app.canvas.canvas
+      if (!onGraph || nodeUnderCursor() || linkUnderCursor()) { _ptrClaimed = true; return }
       if (!e.altKey) return
       _swallowMouseDown = true
       e.stopImmediatePropagation()
