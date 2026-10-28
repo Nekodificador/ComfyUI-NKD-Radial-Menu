@@ -281,7 +281,8 @@ function openRadial(clientX, clientY) {
 
   // When opening from a link drag (Path B), LiteGraph has setPointerCapture on
   // the canvas — the overlay never gets mousemove/mouseup. Forward pointer
-  // events from document to the overlay as synthetic mouse events.
+  // events to the overlay as synthetic mouse events. On window, not document:
+  // a Vue slot drag stops pointermove/pointerup at window capture.
   if (_pendingConnect) {
     const ov = document.body.lastElementChild
     if (ov) {
@@ -294,12 +295,12 @@ function openRadial(clientX, clientY) {
       const onMove = fwd("mousemove")
       const onUp = fwd("mouseup")
       const cleanup = () => {
-        document.removeEventListener("pointermove", onMove, true)
-        document.removeEventListener("pointerup", onUp, true)
+        window.removeEventListener("pointermove", onMove, true)
+        window.removeEventListener("pointerup", onUp, true)
         _cleanupFwd = null
       }
-      document.addEventListener("pointermove", onMove, true)
-      document.addEventListener("pointerup", onUp, true)
+      window.addEventListener("pointermove", onMove, true)
+      window.addEventListener("pointerup", onUp, true)
       _cleanupFwd = cleanup
     }
   }
@@ -1638,8 +1639,11 @@ app.registerExtension({
       }
     }, true)
 
-    document.addEventListener("pointerup", () => { _ptrDown = false }, true)
-    document.addEventListener("pointermove", (e) => {
+    // On window: while a Vue (Nodes 2.0) slot drag is active the frontend stops
+    // pointermove/pointerup at window capture, so document never sees them and
+    // the menu would open at the press position instead of under the cursor.
+    window.addEventListener("pointerup", () => { _ptrDown = false }, true)
+    window.addEventListener("pointermove", (e) => {
       if (_ptrDown) { _lastMX = e.clientX; _lastMY = e.clientY }
     }, true)
 
