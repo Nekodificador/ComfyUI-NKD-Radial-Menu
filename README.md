@@ -132,7 +132,7 @@ Values are ComfyUI node type IDs (e.g. `KSampler`, `CLIPTextEncode`, `Checkpoint
 
 ## License
 
-MIT
+GPL-3.0. See [LICENSE](LICENSE).
 
 ## Credits
 
